@@ -11,8 +11,11 @@
 
 import os, pickle, joblib
 import pandas as pd
+import requests, pickle, joblib
+from io import BytesIO
 import streamlit as st
 import seaborn as sns
+import os, pathlib
 from PIL import Image
 from sqlalchemy import create_engine
 from urllib.parse import quote
@@ -20,11 +23,17 @@ from urllib.parse import quote
 # ---------------------------------------------------------------
 # 1 -- Load artefacts
 # ---------------------------------------------------------------
-MODEL_PATH = "bank_marketing_knn.pkl"
-PIPE_PATH  = "bank_marketing_prep_pipeline.joblib"
 
-model    = pickle.load(open(MODEL_PATH, "rb"))
-pipeline = joblib.load(PIPE_PATH)           # preprocessing + FS
+MODEL_URL = "https://github.com/Phani-ISB/ml-ops/raw/main/bank_marketing_knn.pkl"
+PIPE_URL  = "https://github.com/Phani-ISB/ml-ops/raw/main/bank_marketing_prep_pipeline.joblib"
+
+# --- download bytes ---
+model_bytes = BytesIO(requests.get(MODEL_URL, timeout=30).content)       # :contentReference[oaicite:1]{index=1}
+pipe_bytes  = BytesIO(requests.get(PIPE_URL,  timeout=30).content)
+
+# --- deserialize ---
+model    = pickle.load(model_bytes)                                       # :contentReference[oaicite:2]{index=2}
+pipeline = joblib.load(pipe_bytes) 
 
 # ---------------------------------------------------------------
 # 2 -- Core inference routine
@@ -66,26 +75,28 @@ def make_predictions(raw_df: pd.DataFrame,
 # 3 -- Streamlit UI
 # ---------------------------------------------------------------
 def main():
-    # -- sidebar branding (logo optional)
-    if os.path.exists("AiSPRY logo.jpg"):
-        st.sidebar.image(Image.open("AiSPRY logo.jpg"), use_column_width=True)
 
-    st.title("Bank‑Marketing Term‑Deposit Prediction")
+    st.title("Bank (Term‑Deposit) Prediction")
     st.sidebar.header("Upload Campaign File")
 
-    # -- file upload
+    # -- File upload widget
     file = st.sidebar.file_uploader("Choose CSV or Excel", type=["csv", "xlsx"])
-    if not file:
-        st.info("⏳ Awaiting file upload …")
+
+    # Guard clause: stop execution until a real file arrives
+    if file is None:
+        st.info("⏳ Awaiting file upload …")
+        st.stop()                                    
+    # -- Read file based on extension
+    ext = pathlib.Path(file.name).suffix.lower()
+    if ext == ".csv":
+        data = pd.read_csv(file, sep=None, engine="python")  # sep=None 
+    elif ext in (".xls", ".xlsx"):
+        data = pd.read_excel(file)                  
+    else:
+        st.error(" Unsupported file type.")
         st.stop()
 
-    # -- read file
-    try:
-        data = pd.read_csv(file, sep=None)   # sep=None lets pandas sniff delimiter
-    except Exception:
-        data = pd.read_excel(file)
-
-    # -- MySQL creds (optional)
+    # -- Optional MySQL credentials
     st.sidebar.header("Optional – MySQL Persistence")
     user = st.sidebar.text_input("User")
     pw   = st.sidebar.text_input("Password", type="password")
@@ -94,20 +105,25 @@ def main():
     if st.button("Predict"):
         with st.spinner("Running inference …"):
             results = make_predictions(data, user, pw, db)
-
-        # -- pretty display
+        
+        # Quick counts
+       
+        counts = results["Predicted_Response"].value_counts().to_dict()
+        st.info(f"Non‑subscriber : {counts.get('Non-subscriber',0)}  |  "
+                f"Subscriber : {counts.get('Subscriber',0)}")
+        # -- Pretty display
+        
         cmap = sns.light_palette("green", as_cmap=True)
         st.subheader("Results")
         st.table(
             results.style
                    .format({"Subscription_Probability": "{:.2%}"})
-                   .background_gradient(cmap=cmap, subset=["Subscription_Probability"])
+                   .background_gradient(cmap=cmap,
+                                        subset=["Subscription_Probability"])
         )
 
-        # quick counts
-        counts = results["Predicted_Response"].value_counts().to_dict()
-        st.info(f"Non‑subscriber: {counts.get('Non-subscriber',0)} | Subscriber: {counts.get('Subscriber',0)}")
+        
 
-# ---------------------------------------------------------------
+# -----------------------------------------------------------------
 if __name__ == "__main__":
     main()
