@@ -42,7 +42,7 @@ from feature_engine.outliers import Winsorizer
 from imblearn.over_sampling import SMOTE
 
 # --------------------  PHASE 2 – DATA COLLECTION & LOADING  -------------
-DATA_PATH = r"C:/path/to/bank-additional.csv"    # adjust
+DATA_PATH = "https://raw.githubusercontent.com/Phani-ISB/ml-ops/refs/heads/main/bank-additional.csv"    # Using dataset uploaded into github
 bank_df   = pd.read_csv(DATA_PATH, sep=';', na_values=['unknown'])
 
 # optional – push to MySQL (governance demo)
