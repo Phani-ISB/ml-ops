@@ -1,0 +1,23 @@
+# ── web UI ──────────────────────────────────
+streamlit==1.35.0          # UI server
+seaborn==0.13.2            # heat-map & quick plots
+plotly==5.22.0             # optional interactive charts
+
+# ── data / numerics ─────────────────────────
+pandas==2.2.2
+numpy==1.26.4
+scikit-learn==1.5.0
+imbalanced-learn==0.12.0   # SMOTE (import imblearn.…)
+joblib==1.4.2
+shap==0.45.0               # model explainability
+Pillow==10.3.0             # Streamlit image/logo support
+matplotlib==3.9.0          # seaborn backend
+feature-engine==1.7.0
+
+
+# ── streaming & storage ─────────────────────
+sqlalchemy
+confluent-kafka==2.4.0
+mysql-connector-python==8.3.0
+pymysql
+cryptography

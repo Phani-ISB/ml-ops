@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  streamlit-app:
+    build: .
+    container_name: bank_streamlit
+    ports:
+      - "8501:8501"                  # Expose Streamlit web UI
+    depends_on:
+      - mysql-db                    # Wait for DB before launching app
+    environment:
+      DB_HOST: mysql-db            # Internal Docker hostname
+      DB_PORT: 3306                # Inside Docker, it's still 3306
+      DB_USER: user1
+      DB_PASSWORD: user1
+      DB_NAME: wind_db
+    volumes:
+      - .:/app                     # Mount code into container for live reload
+    restart: always
+
+  mysql-db:
+    image: mysql:8.3
+    container_name: mysql_bank
+    ports:
+      - "3307:3306"                # Avoid conflict with local MySQL by using host port 3307
+    environment:
+      MYSQL_ROOT_PASSWORD: Manasa@123   # Root password
+      MYSQL_DATABASE: bank_mktg_db
+      MYSQL_USER: user1
+      MYSQL_PASSWORD: user1
+    volumes:
+      - mysql_data:/var/lib/mysql # Persist MySQL data
+    restart: always
+
+volumes:
+  mysql_data:
