@@ -28,11 +28,11 @@ MODEL_URL = "https://github.com/Phani-ISB/ml-ops/raw/main/bank_marketing_knn.pkl
 PIPE_URL  = "https://github.com/Phani-ISB/ml-ops/raw/main/bank_marketing_prep_pipeline.joblib"
 
 # --- download bytes ---
-model_bytes = BytesIO(requests.get(MODEL_URL, timeout=30).content)       # :contentReference[oaicite:1]{index=1}
+model_bytes = BytesIO(requests.get(MODEL_URL, timeout=30).content)       
 pipe_bytes  = BytesIO(requests.get(PIPE_URL,  timeout=30).content)
 
 # --- deserialize ---
-model    = pickle.load(model_bytes)                                       # :contentReference[oaicite:2]{index=2}
+model    = pickle.load(model_bytes)                                       
 pipeline = joblib.load(pipe_bytes) 
 
 # ---------------------------------------------------------------
@@ -77,7 +77,7 @@ def make_predictions(raw_df: pd.DataFrame,
 def main():
 
     st.title("Bank (Term‑Deposit) Prediction")
-    st.sidebar.header("Upload Campaign File")
+    st.sidebar.header("Upload File")
 
     # -- File upload widget
     file = st.sidebar.file_uploader("Choose CSV or Excel", type=["csv", "xlsx"])
