@@ -8,15 +8,14 @@
 #  • Objective:         Flag “hot leads” (y = "yes") with high recall
 #                       while keeping false positives affordable.
 #  • Constraints:       Contact‑cost budget, regulator’s contact limits.
-#  • Success metrics:   – Business: ≥ 30 % lift vs random targeting
-#                       – ML:       ≥ 0.85 ROC‑AUC on hold‑out
-#                       – Economic: ≥ 15 % lower cost‑per‑conversion
+#  • Success metrics:   – ML:       ≥ 0.85 ROC‑AUC on hold‑out
+#                       
 #
 # Phase 1.b – DATA UNDERSTANDING
 # ------------------------------------------------------------------------
 #  • Source:  `bank-additional.csv`  (UCI; semicolon‑delimited)
 #  • Size:    41 188 rows × 21 columns
-#  • Target:  `y`  {“yes”, “no”}
+#  • Target:  `Subscriber`  {“yes”, “no”}
 #  • Features: 10 numeric + 10 categorical (job, marital, …, month, …)
 # ========================================================================
 
@@ -31,7 +30,7 @@ from sqlalchemy import create_engine
 from urllib.parse import quote
 
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
+from sklearn.preprocessing import OneHotEncoder, MinMaxScaler, StandardScaler
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -69,9 +68,7 @@ bank_df.to_sql('raw_campaign', con=engine, if_exists='replace', index=False)
 
 # --------------------  QUICK EDA SNAPSHOT -------------------------------
 d = dtale.show(bank_df, ignore_duplicate=True)
-d = dtale.show(bank_df, host="127.0.0.1", port=40000, subprocess=False, open_browser=True)
-print(d._url)
-d.open_browser()
+#d.open_browser()
 
 # --------------------  PHASE 3 – DATA PREPARATION  ----------------------
 # ---- 3.1  Target recoding
@@ -84,20 +81,19 @@ y = bank_df['y'].dropna()
 # ---- 3.3  Column groups
 numeric_feats     = X.select_dtypes(exclude=['object']).columns.tolist()
 numeric_feats = [col for col in numeric_feats 
-                 if col not in ('pdays', 'previous')]  # Dropping columns with no variation
+                 if col not in ('pdays', 'previous')]  # Based on EDA, dropping columns with no variation
 categorical_feats = X.select_dtypes(include=['object']).columns.tolist()
+
 
 # ---- 3.4  Pre‑processing pipelines
 num_pipe = Pipeline([
-    ('impute',    SimpleImputer(strategy='median')),
-    ("nzv",  VarianceThreshold(threshold = 0.0)), # removes zero variance features
+    ('impute',    SimpleImputer(strategy='mean')),
     ('winsorize', Winsorizer(capping_method='iqr', tail='both', fold=1.5)),
-    ('scale',     MinMaxScaler())
+    ('scale',     StandardScaler())
 ])
 
 cat_pipe = Pipeline([
-    ('impute', SimpleImputer(strategy='most_frequent')),
-    ('encode', OneHotEncoder(drop='first', handle_unknown='ignore'))
+        ('encode', OneHotEncoder(drop= None, handle_unknown='ignore', sparse_output=False))
 ])
 
 preprocess = ColumnTransformer([
@@ -105,8 +101,8 @@ preprocess = ColumnTransformer([
     ('cat', cat_pipe, categorical_feats)
 ])
 
-# ---- 3.5  Feature selection (retain 25 best)
-selector = SelectKBest(score_func=f_classif, k=25)
+# ---- 3.5  Feature selection
+selector = SelectKBest(score_func=f_classif, k=15)
 
 full_pipe = Pipeline([
     ('prep', preprocess),
@@ -129,7 +125,7 @@ X_train, y_train = smote.fit_resample(X_train, y_train)
 
 # --------------------  PHASE 5 – MODEL BUILDING & TUNING  ---------------
 knn_base  = KNeighborsClassifier()
-param_grid = {'n_neighbors': list(range(3, 40, 2)), 'weights':['distance']}
+param_grid = {'n_neighbors': list(range(5, 31, 2))} 
 
 precision_scorer = make_scorer(
     precision_score,
@@ -137,46 +133,32 @@ precision_scorer = make_scorer(
     average='binary'                 
 )
 
-grid  = GridSearchCV(knn_base, param_grid, cv=5, scoring=precision_scorer, n_jobs=-1)
+scoring = {'accuracy' : 'accuracy' , 'precision' : precision_scorer, 'roc_auc' : 'roc_auc'}
+
+grid  = GridSearchCV(knn_base, param_grid, cv=5, scoring= scoring, refit = 'accuracy', n_jobs=-1)
+
 grid.fit(X_train, y_train)
 best_knn = grid.best_estimator_
-pickle.dump(best_knn, open('bank_marketing_knn.pkl', 'wb'))
 
-# --------------------  PHASE 6 – EVALUATION -----------------------------
-print(f"Best k: {grid.best_params_['n_neighbors']}")
-print(f"CV Precision: {grid.best_score_:.4f}")
-
+results = pd.DataFrame(grid.cv_results_)
+best = grid.best_index_
+best_fit = results.loc[best,['params','mean_test_accuracy','mean_test_precision','mean_test_roc_auc']]
+print(best_fit)
 y_proba = best_knn.predict_proba(X_test)[:, 1]
 roc     = roc_auc_score(y_test.map({'Non-subscriber':0, 'Subscriber':1}), y_proba)
 print(f"Hold‑out ROC‑AUC: {roc:.4f}")
 
+
+#Saving model into pickle file
+pickle.dump(best_knn, open('bank_marketing_knn.pkl', 'wb'))
+
+# --------------------  PHASE 6 – EVALUATION -----------------------------
+
 y_pred  = best_knn.predict(X_test)
 cm      = confusion_matrix(y_test, y_pred, labels=['Subscriber','Non-subscriber'])
+
+# Confusion Matrix display
 ConfusionMatrixDisplay(cm,
                        display_labels=['Sub.', 'Non-Sub.']).plot()
 plt.title('Bank‑Marketing – Confusion Matrix')
 plt.show()
-
-# --------------------  PHASE 7 – EXPLAINABILITY (SHAP) ------------------
-# Build post‑transform feature name list
-prep_only   = full_pipe.named_steps['prep']
-cat_names   = prep_only.named_transformers_['cat'] \
-                 .named_steps['encode'].get_feature_names_out(categorical_feats)
-num_names   = numeric_feats
-feature_names = np.concatenate([num_names, cat_names])[selector.get_support()]
-
-sample_X = pd.DataFrame(X_test, columns=feature_names)
-
-explainer   = shap.KernelExplainer(best_knn.predict_proba, sample_X.sample(200, random_state=42))
-shap_values = explainer.shap_values(sample_X)
-
-shap.summary_plot(shap_values, sample_X, show=False)
-plt.title('SHAP Summary – Drivers of Subscription')
-plt.show()
-
-# --------------------  OUTPUT ARTEFACTS ---------------------------------
-#   • bank_marketing_prep_pipeline.joblib   (pre‑processing + FS)
-#   • bank_marketing_knn.pkl                (optimised classifier)
-#   • SHAP summary plot                     (feature importance)
-# Ready for MLflow/DVC tracking and deployment exactly like your turbine
-# example – e.g. wrap with FastAPI, containerise, push to AWS ECR/ECS.

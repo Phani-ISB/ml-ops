@@ -13,7 +13,7 @@ services:
       DB_PORT: 3306                # Inside Docker, it's still 3306
       DB_USER: user1
       DB_PASSWORD: user1
-      DB_NAME: wind_db
+      DB_NAME: bank_mktg_db
     volumes:
       - .:/app                     # Mount code into container for live reload
     restart: always
