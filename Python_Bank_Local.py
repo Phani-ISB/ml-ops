@@ -143,16 +143,19 @@ best_knn = grid.best_estimator_
 results = pd.DataFrame(grid.cv_results_)
 best = grid.best_index_
 best_fit = results.loc[best,['params','mean_test_accuracy','mean_test_precision','mean_test_roc_auc']]
-print(best_fit)
-y_proba = best_knn.predict_proba(X_test)[:, 1]
-roc     = roc_auc_score(y_test.map({'Non-subscriber':0, 'Subscriber':1}), y_proba)
-print(f"Hold‑out ROC‑AUC: {roc:.4f}")
+
 
 
 #Saving model into pickle file
 pickle.dump(best_knn, open('bank_marketing_knn.pkl', 'wb'))
 
 # --------------------  PHASE 6 – EVALUATION -----------------------------
+
+print(best_fit)
+y_proba = best_knn.predict_proba(X_test)[:, 1]
+roc     = roc_auc_score(y_test.map({'Non-subscriber':0, 'Subscriber':1}), y_proba)
+print(f"Hold‑out ROC‑AUC: {roc:.4f}")
+
 
 y_pred  = best_knn.predict(X_test)
 cm      = confusion_matrix(y_test, y_pred, labels=['Subscriber','Non-subscriber'])
